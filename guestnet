@@ -35,7 +35,7 @@ natstart() {
 natstop() {
         iptables --table nat --delete POSTROUTING --out-interface $WAN -j MASQUERADE
         iptables --delete FORWARD --in-interface $LAN -j ACCEPT
-        echo 0 > /proc/sys/net/ipv4/ip_forward Network
+        echo 0 > /proc/sys/net/ipv4/ip_forward
         wondershaper remove $LAN
         }
 
